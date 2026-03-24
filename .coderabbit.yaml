@@ -1,0 +1,268 @@
+language: en-US
+tone_instructions: "Be assertive and pragmatic. Prioritize correctness, concurrency safety, performance, and maintainability in code, make sure that the code follows latest best practices."
+
+reviews:
+  review_status: false # disable walkthrough
+  profile: assertive
+  auto_title_instructions: "Generate a concise PR title; prefer imperative mood and include the primary module or package name."
+  poem: false
+  auto_assign_reviewers: true
+  auto_review:
+      enabled: true
+      drafts: false
+      ignore_usernames:
+        - "dependabot"
+        - "codecov"
+  changed_files_summary: false
+  review_status: false
+  tools:
+      shellcheck:
+        enabled: true
+      markdownlint:
+        enabled: true
+      github-checks:
+        enabled: true
+      languagetool:
+        enabled: true
+        level: "picky"
+      hadolint:
+        enabled: true
+      golangci-lint:
+        enabled: true
+      gitleaks:
+        enabled: true
+      buf:
+        enabled: true
+      checkmake:
+        enabled: true
+      yamllint:
+        enabled: true
+      actionlint:
+        enabled: true
+
+  path_filters:
+  - "**/*.go"
+  - "**/*.rs"
+  - "**/*.proto"
+  - "**/*.sh"
+  - "**/*.md"
+  - "**/Makefile*"
+  - ".github/workflows/**"
+  - "**.gitignore"
+  - "**/*.yml"
+  - "**/*.yaml"
+  - "**/*.star"
+  - "**/*.py"
+  - "**/requirements*.txt"
+
+  - "!**/*.pb.go"
+  - "!**/gen/**"
+  - "!**/vendor/**"
+  - "!**/node_modules/**"
+  - "!**/dist/**"
+  - "!coverage.html"
+  - "!coverage.out"
+
+  - "!.golangci.yaml"
+  - "!.gitignore"
+  - "!go.mod"
+  - "!go.sum"
+
+  path_instructions:
+    - path: "**/*"
+      instructions: |
+        When you find the same underlying issue in multiple locations (same pattern, same fix):
+          - Do NOT post separate comments for each occurrence.
+          - Post a single primary comment on the first occurrence.
+          - In that comment, include a short list of “Also at: file:line” references
+            for the other locations (e.g. 'Also at: foo.go:42, bar.go:17').
+        Prioritize signal over volume: one strong comment that references multiple
+        locations is preferred over many near-identical comments.
+        
+    - path: '**/*.go'
+      instructions: >-
+        Review Go code for: idiomatic patterns, error handling (check all errors),
+        concurrency safety (context propagation, goroutine cleanup), test coverage
+        for changed logic, exported API stability, memory efficiency (avoid unnecessary
+        allocations), and prefer standard library over third-party when reasonable.
+
+        Do NOT recommend the legacy “capture range variable”
+        workaround (`tc := tc`, `i := i`) for `for range` loops where iteration variables
+        are declared with `:=` (e.g., `for _, tc := range tests { ... }`), including
+        parallel subtests (`t.Parallel()`). 
+
+        Report the legacy “capture range variable” as error.
+        Only flag loop capture issues when:
+        - the range variables are reused via `=` (e.g., `for _, tc = range tests`), or
+        - using index loops / other forms where closures can capture a changing variable
+          (e.g., `for i := 0; i < ...; i++ { go func(){ _ = i }() }`).
+
+    - path: '**/*_test.go'
+      instructions: >-
+        Verify tests are deterministic and isolated (no shared global state). Prefer table-driven tests
+        and subtests with clear names (TestX_Scenario_ExpectedBehavior). Use t.Parallel() only when
+        state is truly isolated; ensure data races won't occur under -race. Avoid time.Sleep—prefer
+        synchronization via channels, contexts with deadlines, WaitGroups, and condition variables.
+        Use t.Cleanup() (or defer + t.Cleanup) for resource cleanup; use t.TempDir() for filesystem.
+        Seed randomness deterministically (rand.New(rand.NewSource(…))). Prefer httptest/httptest.Server
+        over real network calls; avoid external services. Make assertions descriptive with context.
+        Verify goroutine lifecycle (no leaks) and ensure all timers/tickers are stopped. Avoid flaky
+        patterns (wall-clock timing, sleeps, unordered map iteration assumptions). Utilize "require" package.
+
+    - path: '**/*.proto'
+      instructions: >-
+        Review the Protobuf definitions, enforce backward-compatible schema changes:
+        no field renumbering/removal; prefer reserved fields; update comments.
+        Verify `buf lint` is clean and `buf breaking` passes against main.
+        Point out issues relative to compatibility and expressiveness.
+
+    - path: '**/*.sh'
+      instructions: >-
+              Review the shell scripts, point out issues relative to security,
+              performance, and maintainability.
+
+    - path: "Makefile*"
+      instructions: >-
+          - Provide phony targets; stable reproducible builds; avoid environment-specific paths.
+
+    - path: "**/*.md"
+      instructions: |
+          - Technical accuracy first; keep commands copy-pastable; prefer minimal prerequisites.
+
+    - path: '**/*.rs'
+      instructions: >-
+        Review the Rust code with focus on correctness, idiomatic usage, concurrency safety,
+        and performance. Ensure code follows modern Rust best practices, including: 
+        - Proper error handling using `Result` and `?` operator.
+        - Avoidance of unnecessary clones and allocations.
+        - Correct usage of lifetimes, borrowing, and ownership.
+        - Clear and expressive APIs.
+        - Concurrency safety using `Send`, `Sync`, and scoped lifetimes.
+        - Use of `tokio`, `async`, or threading primitives must not leak or deadlock.
+        - Validate tests are robust, order-independent, and deterministic.
+        - Ensure panic-free code in production paths.
+        - Flag unsafe blocks unless absolutely necessary and well-justified.
+        - Suggest improvements to modularity, visibility (`pub`), and reuse.
+    
+    - path: 'tests/**/*.rs'
+      instructions: >-
+        Ensure tests are order-independent and deterministic. For async, use #[tokio::test]
+        with the right runtime; avoid unwrap() in favor of ?/expect(). Isolate FS with
+        tempfile; prefer mocks/in-process servers over real networks; join tasks to avoid
+        leaks; avoid sleeps—use tokio::time controls; add contextual failure messages.
+
+    - path: 'src/**/*.rs'  
+      instructions: >-
+        When reviewing #[cfg(test)] mod tests blocks, apply the same criteria as above:
+        determinism, isolation, no unwrap() in prod paths, await all tasks, and avoid
+        wall-clock timing. Prefer deterministic RNG seeds.
+
+    - path: 'benches/**/*.rs'
+      instructions: >-
+        Benchmarks should be stable and reproducible; avoid network/IO; gate long benches
+        behind feature flags or CI skip; prefer criterion for statistical rigor.
+
+    - path: '.github/workflows/**'
+      instructions: >-
+        Check `permissions`, `concurrency`, `timeout-minutes`, use actions/checkout@v4 with fetch-depth: 0 for tools that need full history;
+        prefer pinned SHAs for third-party actions; validate matrix bounds and secrets exposure.
+
+    - path: '**/*.py'
+      instructions: >-
+        Review Python code with a focus on modern Python 3 best practices:
+        - Enforce type hints (PEP 484/PEP 561) on public functions, methods, and
+          module boundaries; prefer mypy/pyright-clean code.
+        - Prefer dataclasses, enums, and TypedDicts over ad-hoc dicts/tuples when
+          modeling structured data.
+        - Use pathlib for filesystem paths, logging module instead of print, and
+          context managers for files, locks, and network resources.
+        - Validate inputs at boundaries; avoid bare `except:` and catch specific
+          exceptions with clear error messages.
+        - For concurrency, prefer asyncio (or anyio/trio) over manual threading
+          when possible; ensure all tasks are awaited and cancellation is handled.
+        - Avoid global state and singletons unless strictly necessary; keep
+          module-level code side-effect free (no work on import).
+        - Keep functions small and composable; document non-obvious logic with
+          clear docstrings and comments oriented around behavior and invariants.
+        - Prefer standard library and well-known libraries over custom ad-hoc
+          solutions; be explicit about versions and constraints in requirements.
+        - Ensure tests are deterministic, isolated (tmp dirs, in-memory services),
+          and fast; avoid network calls and wall-clock sleeps in unit tests.
+        - Watch for performance traps: quadratic loops over large collections,
+          unnecessary copies, repeated JSON/regex work in hot paths.
+          
+    - path: '**/*.star'
+      instructions: >-
+        Review Starlark files (e.g. Kurtosis/Starlark packages) for clarity,
+        determinism, and correct use of the execution plan:
+        - Keep top-level code declarative; put procedural logic in functions
+          (e.g. run(plan, args)) and avoid side effects at import time.
+        - Prefer small, focused helpers for adding services, networks, and volumes
+          rather than large monolithic run() bodies.
+        - Ensure service names, ports, and labels are deterministic and derived
+          from args/config instead of hard-coded magic strings.
+        - Validate all incoming args (presence, type, allowed values) early and
+          fail fast with clear error messages when misconfigured.
+        - Avoid duplicating constants (images, ports, env keys, paths); define
+          them once and reuse to keep the topology maintainable.
+        - Make networking and dependency ordering explicit: document which
+          services depend on others, and ensure startup/ready logic is correct.
+        - Prefer expressive variable and function names describing intent
+          (e.g. add_mev_relay_cluster) rather than generic names.
+        - Keep the Starlark deterministic and side-effect free beyond the plan
+          (no randomization, time-based behavior, or host-specific paths).
+        - Document non-obvious topology decisions (why a port, why a label,
+          why a particular resource size) in comments near the code.
+        - Aim for configs that are easy to extend in future scenarios (extra
+          validators/builders/relays) without copy-pasting large blocks.
+
+  pre_merge_checks:
+    title:
+      mode: "warning"
+      requirements: "Title should be concise and descriptive, ideally under 50 characters."
+    issue_assessment:
+        mode: "warning"
+    custom_checks:
+      - name: "Go build and test rationale"
+        mode: "warning"
+        instructions: "If code changes affect Go packages, verify that tests cover changed logic; flag risky changes lacking tests."
+      - name: "Concurrency safety"
+        mode: "warning"
+        instructions: "Watch for goroutine leaks, unbounded channels, racy access; ensure contexts are plumbed and respected."
+      - name: "Public API changes"
+        mode: "warning"
+        instructions: "Call out any breaking changes to exported types/functions and expect a CHANGELOG entry or migration note."
+      - name: "Security considerations"
+        mode: "warning"
+        instructions: "Flag: SQL injection risks, command injection, path traversal, unvalidated inputs, hardcoded credentials, insecure crypto usage (MD5/SHA1), and missing rate limiting on public endpoints."
+      - name: "Rust best practices"
+        mode: "error"
+        instructions: |
+          - Test functions must not return Result; use unwrap() inside tests.
+          - Comments in test function should follow Given/When/Then/And structure everywhere where is applicable, exceptions should be well justified.
+          - Do not use expect() in tests. Use unwrap() instead.
+          - Use consistent variable naming. Do not mix names like remote_addr, remote, r1, etc. Pick one descriptive name and use it everywhere.
+          - Avoid single-letter variable names (like q) except in very small closures. Use descriptive identifiers.
+          - When using panic() and when appropriate, print any relevant object along with the error message.
+          - Avoid using unwrap() in production code; prefer proper error handling with Result or expect() with descriptive messages to prevent panics and outages.
+          - The check should fail if unwrap() is used without proper justification.
+
+chat:
+  auto_reply: true
+
+knowledge_base:
+  web_search:
+    enabled: true
+
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "**/CODING_STANDARDS.md"
+      - "**/CONTRIBUTING.md"
+      - "docs/STYLEGUIDE.md"
+
+  learnings:
+    scope: global
+
+  issues:
+    scope: global
