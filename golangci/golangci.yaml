@@ -114,8 +114,6 @@ linters:
     rules:
       - linters: [dupl, gosec]
         path: _test\.go
-      - linters: [staticcheck]
-        text: 'ST1003:'
     paths:
       - .*\.pb\.go$
       - .*\.pb\.gw\.go$
