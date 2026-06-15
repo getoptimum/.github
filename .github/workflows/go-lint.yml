@@ -10,7 +10,8 @@ on:
         required: false
         default: ""
       # Optional override. When empty, the version is read from the caller's
-      # go.mod golangci-lint tool directive, falling back to LINT_VERSION_FALLBACK.
+      # go.mod require entry for github.com/golangci/golangci-lint/v2 (pinned
+      # alongside the tool directive by `go get -tool`), then LINT_VERSION_FALLBACK.
       lint-version:
         type: string
         required: false
