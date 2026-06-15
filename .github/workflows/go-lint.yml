@@ -35,6 +35,9 @@ jobs:
     name: golangci-lint
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    concurrency:
+      group: go-lint-${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -75,7 +78,11 @@ jobs:
             v="$LINT_VERSION_FALLBACK"
             echo "::notice::golangci-lint not pinned via go.mod tool directive; using fallback $v"
           fi
-          echo "version=$v" >> "$GITHUB_OUTPUT"
+          if ! [[ "$v" =~ ^(latest|v[0-9]+\.[0-9]+(\.[0-9]+)?([-+.][0-9A-Za-z.+-]+)?)$ ]]; then
+            echo "::error::Invalid golangci-lint version: '$v'"
+            exit 1
+          fi
+          printf 'version=%s\n' "$v" >> "$GITHUB_OUTPUT"
 
       - name: golangci-lint
         uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
