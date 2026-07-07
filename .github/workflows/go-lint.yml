@@ -42,10 +42,11 @@ jobs:
     concurrency:
       group: go-lint-${{ github.workflow }}-${{ github.ref }}
       cancel-in-progress: true
-    # Bridged to env so it can gate the token steps; the `secrets` context is
-    # not usable directly in a step-level `if`.
+    # Bridge presence to a boolean env so it can gate the token steps; the
+    # `secrets` context is not usable directly in a step-level `if`, and this
+    # keeps the secret values themselves out of the job environment.
     env:
-      GH_APP_ID: ${{ secrets.GH_APP_ID }}
+      HAS_APP_CREDS: ${{ secrets.GH_APP_ID != '' && secrets.GH_APP_PRIVATE_KEY != '' }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -53,7 +54,7 @@ jobs:
 
       - name: Generate GitHub App token
         id: generate-token
-        if: ${{ env.GH_APP_ID != '' }}
+        if: ${{ env.HAS_APP_CREDS == 'true' }}
         uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
         with:
           app-id: ${{ secrets.GH_APP_ID }}
