@@ -47,6 +47,10 @@ jobs:
     # keeps the secret values themselves out of the job environment.
     env:
       HAS_APP_CREDS: ${{ secrets.GH_APP_ID != '' && secrets.GH_APP_PRIVATE_KEY != '' }}
+      # Job-scoped so it applies to the go/golangci-lint module resolution
+      # below, keeping private module paths off the public proxy/checksum DB.
+      # No-op for callers with only public deps.
+      GOPRIVATE: github.com/getoptimum
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -72,8 +76,6 @@ jobs:
         if: ${{ steps.generate-token.outputs.token != '' }}
         run: |
           git config --global url."https://x-access-token:${{ steps.generate-token.outputs.token }}@github.com/".insteadOf "https://github.com/"
-        env:
-          GOPRIVATE: github.com/getoptimum
 
       - name: Resolve golangci-lint version
         id: lint-version
