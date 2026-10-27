@@ -20,6 +20,12 @@ on:
         type: string
         required: false
         default: "10m"
+      # For callers still carrying lint debt: true limits pull_request and merge_group runs
+      # to issues in their diff. Pushes and tags always lint the full tree, so releases stay gated.
+      only-new-issues:
+        type: boolean
+        required: false
+        default: false
     secrets:
       # Optional: only needed when the caller has private github.com/getoptimum
       # module deps. On public repos and fork PRs GitHub withholds secrets, so
@@ -40,7 +46,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     concurrency:
-      group: go-lint-${{ github.workflow }}-${{ github.ref }}
+      # Push runs are keyed per commit so a later merge never cancels an earlier verdict,
+      # unless the caller's own workflow-level concurrency cancels the whole run.
+      group: go-lint-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'push' && github.sha || '' }}
       cancel-in-progress: true
     # Bridge presence to a boolean env so it can gate the token steps; the
     # `secrets` context is not usable directly in a step-level `if`, and this
@@ -51,10 +59,14 @@ jobs:
       # below, keeping private module paths off the public proxy/checksum DB.
       # No-op for callers with only public deps.
       GOPRIVATE: github.com/getoptimum
+      # Push is excluded on purpose: a tag push has no base to diff. pull_request_target
+      # is excluded because checkout lands on the base, not the PR.
+      DIFF_ONLY: ${{ inputs.only-new-issues && (github.event_name == 'pull_request' || github.event_name == 'merge_group') }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          fetch-depth: 0
+          # merge_group diffs with --new-from-rev and needs history; pull_request uses the API patch.
+          fetch-depth: ${{ env.DIFF_ONLY == 'true' && github.event_name == 'merge_group' && '0' || '1' }}
 
       - name: Generate GitHub App token
         id: generate-token
@@ -102,4 +114,4 @@ jobs:
         with:
           version: ${{ steps.lint-version.outputs.version }}
           args: --timeout ${{ inputs.timeout }}
-          only-new-issues: true
+          only-new-issues: ${{ env.DIFF_ONLY }}
