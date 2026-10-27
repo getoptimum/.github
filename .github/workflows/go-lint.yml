@@ -20,6 +20,13 @@ on:
         type: string
         required: false
         default: "10m"
+      # Optional override: "true" or "false". When empty, PR-like events gate on new
+      # issues only, and pushes and tags lint the full tree. A PR that changes go.mod or
+      # the golangci config also lints the full tree, since it can flag untouched code.
+      only-new-issues:
+        type: string
+        required: false
+        default: ""
     secrets:
       # Optional: only needed when the caller has private github.com/getoptimum
       # module deps. On public repos and fork PRs GitHub withholds secrets, so
@@ -97,11 +104,34 @@ jobs:
           fi
           printf 'version=%s\n' "$v" >> "$GITHUB_OUTPUT"
 
+      - name: Resolve lint scope
+        id: scope
+        env:
+          INPUT_ONLY_NEW_ISSUES: ${{ inputs.only-new-issues }}
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+        run: |
+          v="$INPUT_ONLY_NEW_ISSUES"
+          if [ -z "$v" ]; then
+            case "$EVENT_NAME" in
+              pull_request|pull_request_target|merge_group) v=true ;;
+              *) v=false ;;
+            esac
+            if [ "$v" = true ] && [ -n "$BASE_SHA" ] &&
+              git diff --name-only "$BASE_SHA" HEAD -- go.mod '.golangci.yml' '.golangci.yaml' '.golangci.toml' '.golangci.json' | grep -q .; then
+              echo "::notice::go.mod or golangci config changed; linting the full tree"
+              v=false
+            fi
+          fi
+          if [ "$v" != true ] && [ "$v" != false ]; then
+            echo "::error::only-new-issues must be true, false or empty, got '$v'"
+            exit 1
+          fi
+          printf 'only-new-issues=%s\n' "$v" >> "$GITHUB_OUTPUT"
+
       - name: golangci-lint
         uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
         with:
           version: ${{ steps.lint-version.outputs.version }}
           args: --timeout ${{ inputs.timeout }}
-          # PRs gate on new issues only. Pushes lint the whole tree: a tag push has no
-          # base to diff, and the action's silent full-lint fallback hid tool-bump drift.
-          only-new-issues: ${{ github.event_name == 'pull_request' }}
+          only-new-issues: ${{ steps.scope.outputs.only-new-issues }}
