@@ -20,8 +20,8 @@ on:
         type: string
         required: false
         default: "10m"
-      # Full tree by default. true limits pull_request and merge_group runs to issues in
-      # their diff; every other event, pushes and tags included, lints the full tree.
+      # For callers still carrying lint debt: true limits pull_request and merge_group runs
+      # to issues in their diff. Pushes and tags always lint the full tree, so releases stay gated.
       only-new-issues:
         type: boolean
         required: false
@@ -59,13 +59,14 @@ jobs:
       # below, keeping private module paths off the public proxy/checksum DB.
       # No-op for callers with only public deps.
       GOPRIVATE: github.com/getoptimum
-      # The events golangci-lint-action can diff; pull_request_target checks out the base.
-      DIFF_ONLY: ${{ inputs.only-new-issues && contains(fromJSON('["pull_request","merge_group"]'), github.event_name) }}
+      # Push is excluded on purpose: a tag push has no base to diff. pull_request_target
+      # is excluded because checkout lands on the base, not the PR.
+      DIFF_ONLY: ${{ inputs.only-new-issues && (github.event_name == 'pull_request' || github.event_name == 'merge_group') }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          # Full history only when diffing.
-          fetch-depth: ${{ env.DIFF_ONLY == 'true' && '0' || '1' }}
+          # merge_group diffs with --new-from-rev and needs history; pull_request uses the API patch.
+          fetch-depth: ${{ env.DIFF_ONLY == 'true' && github.event_name == 'merge_group' && '0' || '1' }}
 
       - name: Generate GitHub App token
         id: generate-token
