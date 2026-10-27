@@ -102,4 +102,6 @@ jobs:
         with:
           version: ${{ steps.lint-version.outputs.version }}
           args: --timeout ${{ inputs.timeout }}
-          only-new-issues: true
+          # PRs gate on new issues only. Pushes lint the whole tree: a tag push has no
+          # base to diff, and the action's silent full-lint fallback hid tool-bump drift.
+          only-new-issues: ${{ github.event_name == 'pull_request' }}
