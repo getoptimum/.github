@@ -20,8 +20,8 @@ on:
         type: string
         required: false
         default: "10m"
-      # Full tree by default on every event, so PRs are held to what main and tags are.
-      # true reports only issues in the diff; for callers still carrying lint debt.
+      # Full tree by default. true limits PRs and merge queues to issues in their diff,
+      # for callers still carrying lint debt; pushes and tags always lint the full tree.
       only-new-issues:
         type: boolean
         required: false
@@ -47,7 +47,7 @@ jobs:
     timeout-minutes: 30
     concurrency:
       # Push runs are keyed per commit so a later merge never cancels an earlier verdict.
-      group: go-lint-${{ github.workflow }}-${{ github.event_name == 'push' && github.sha || github.ref }}
+      group: go-lint-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'push' && github.sha || '' }}
       cancel-in-progress: true
     # Bridge presence to a boolean env so it can gate the token steps; the
     # `secrets` context is not usable directly in a step-level `if`, and this
@@ -61,7 +61,8 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          fetch-depth: 0
+          # Full history only when diffing. Inverted because 0 is falsy, so `&& 0 || 1` is always 1.
+          fetch-depth: ${{ !(inputs.only-new-issues && github.event_name != 'push') && 1 || 0 }}
 
       - name: Generate GitHub App token
         id: generate-token
@@ -109,4 +110,4 @@ jobs:
         with:
           version: ${{ steps.lint-version.outputs.version }}
           args: --timeout ${{ inputs.timeout }}
-          only-new-issues: ${{ inputs.only-new-issues }}
+          only-new-issues: ${{ inputs.only-new-issues && github.event_name != 'push' }}
