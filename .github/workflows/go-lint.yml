@@ -20,9 +20,9 @@ on:
         type: string
         required: false
         default: "10m"
-      # Optional override: "true" or "false". When empty, PR-like events gate on new
-      # issues only, and pushes and tags lint the full tree. A PR that changes go.mod or
-      # the golangci config also lints the full tree, since it can flag untouched code.
+      # Optional override: "true" or "false". When empty, pull_request and merge_group
+      # gate on new issues only and every other event lints the full tree. A PR that
+      # changes go.mod, go.work, golangci config or workflows lints the full tree too.
       only-new-issues:
         type: string
         required: false
@@ -109,23 +109,31 @@ jobs:
         env:
           INPUT_ONLY_NEW_ISSUES: ${{ inputs.only-new-issues }}
           EVENT_NAME: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          MERGE_GROUP_BASE: ${{ github.event.merge_group.base_sha }}
         run: |
           v="$INPUT_ONLY_NEW_ISSUES"
-          if [ -z "$v" ]; then
-            case "$EVENT_NAME" in
-              pull_request|pull_request_target|merge_group) v=true ;;
-              *) v=false ;;
-            esac
-            if [ "$v" = true ] && [ -n "$BASE_SHA" ] &&
-              git diff --name-only "$BASE_SHA" HEAD -- go.mod '.golangci.yml' '.golangci.yaml' '.golangci.toml' '.golangci.json' | grep -q .; then
-              echo "::notice::go.mod or golangci config changed; linting the full tree"
-              v=false
+          if [ -n "$v" ]; then
+            if [ "$v" != true ] && [ "$v" != false ]; then
+              echo "::error::only-new-issues must be true, false or empty, got '$v'"
+              exit 1
             fi
-          fi
-          if [ "$v" != true ] && [ "$v" != false ]; then
-            echo "::error::only-new-issues must be true, false or empty, got '$v'"
-            exit 1
+          else
+            v=false
+            # pull_request_target is left out: checkout lands on the base, not the PR.
+            case "$EVENT_NAME" in
+              pull_request|merge_group)
+                v=true
+                # First parent of the merge ref, so a re-run with a stale payload diffs only this change.
+                base="${MERGE_GROUP_BASE:-HEAD^1}"
+                if ! changed="$(git diff --name-only "$base" HEAD -- go.mod go.work '.golangci.*' '.github/workflows/')"; then
+                  echo "::warning::could not diff against $base; linting the full tree"
+                  v=false
+                elif [ -n "$changed" ]; then
+                  echo "::notice::lint inputs changed (${changed//$'\n'/, }); linting the full tree"
+                  v=false
+                fi
+                ;;
+            esac
           fi
           printf 'only-new-issues=%s\n' "$v" >> "$GITHUB_OUTPUT"
 
