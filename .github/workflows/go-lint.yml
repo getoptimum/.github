@@ -20,13 +20,12 @@ on:
         type: string
         required: false
         default: "10m"
-      # Optional override: "true" or "false". When empty, pull_request and merge_group
-      # gate on new issues only and every other event lints the full tree. A PR that
-      # changes go.mod, go.work, golangci config or workflows lints the full tree too.
+      # Full tree by default on every event, so PRs are held to what main and tags are.
+      # true reports only issues in the diff; for callers still carrying lint debt.
       only-new-issues:
-        type: string
+        type: boolean
         required: false
-        default: ""
+        default: false
     secrets:
       # Optional: only needed when the caller has private github.com/getoptimum
       # module deps. On public repos and fork PRs GitHub withholds secrets, so
@@ -47,7 +46,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     concurrency:
-      group: go-lint-${{ github.workflow }}-${{ github.ref }}
+      # Push runs are keyed per commit so a later merge never cancels an earlier verdict.
+      group: go-lint-${{ github.workflow }}-${{ github.event_name == 'push' && github.sha || github.ref }}
       cancel-in-progress: true
     # Bridge presence to a boolean env so it can gate the token steps; the
     # `secrets` context is not usable directly in a step-level `if`, and this
@@ -104,42 +104,9 @@ jobs:
           fi
           printf 'version=%s\n' "$v" >> "$GITHUB_OUTPUT"
 
-      - name: Resolve lint scope
-        id: scope
-        env:
-          INPUT_ONLY_NEW_ISSUES: ${{ inputs.only-new-issues }}
-          EVENT_NAME: ${{ github.event_name }}
-          MERGE_GROUP_BASE: ${{ github.event.merge_group.base_sha }}
-        run: |
-          v="$INPUT_ONLY_NEW_ISSUES"
-          if [ -n "$v" ]; then
-            if [ "$v" != true ] && [ "$v" != false ]; then
-              echo "::error::only-new-issues must be true, false or empty, got '$v'"
-              exit 1
-            fi
-          else
-            v=false
-            # pull_request_target is left out: checkout lands on the base, not the PR.
-            case "$EVENT_NAME" in
-              pull_request|merge_group)
-                v=true
-                # First parent of the merge ref, so a re-run with a stale payload diffs only this change.
-                base="${MERGE_GROUP_BASE:-HEAD^1}"
-                if ! changed="$(git diff --name-only "$base" HEAD -- go.mod go.work '.golangci.*' '.github/workflows/')"; then
-                  echo "::warning::could not diff against $base; linting the full tree"
-                  v=false
-                elif [ -n "$changed" ]; then
-                  echo "::notice::lint inputs changed (${changed//$'\n'/, }); linting the full tree"
-                  v=false
-                fi
-                ;;
-            esac
-          fi
-          printf 'only-new-issues=%s\n' "$v" >> "$GITHUB_OUTPUT"
-
       - name: golangci-lint
         uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
         with:
           version: ${{ steps.lint-version.outputs.version }}
           args: --timeout ${{ inputs.timeout }}
-          only-new-issues: ${{ steps.scope.outputs.only-new-issues }}
+          only-new-issues: ${{ inputs.only-new-issues }}
